@@ -8,6 +8,33 @@ import math
 import concurrent.futures
 from datetime import datetime
 
+# malicious = 0
+malicious = 1
+
+# 설정된 파일 경로
+repo_dir = './DikeDataset/files/malware'
+rules_path = '/home/onzl/capa/capa-rules'
+output_csv = './onzl_final_dataset.csv'
+
+# ATT&CK Tactic, MBC Behavior, Namespace 정의
+att_tactics = [
+    'Collection', 'Command and Control', 'Credential Access', 'Defense Evasion',
+    'Discovery', 'Execution', 'Exfiltration', 'Impact', 'Impair Process Control',
+    'Inhibit Response Function', 'Initial Access', 'Lateral Movement', 'Persistence', 
+    'Privilege Escalation'
+]
+malware_behavior = [
+    'Anti-Behavioral Analysis', 'Anti-Static Analysis', 'Collection', 'Command and Control', 
+    'Communication', 'Cryptography', 'Data', 'Defense Evasion', 'Discovery', 'Excution', 'File System', 
+    'Hardware', 'Impact', 'Memory', 'Operating System', 'Persistence', 'Process'
+]
+namespaces = [
+    'anti-analysis', 'collection', 'communication', 'compiler',
+    'data-manipulation', 'doc', 'executable', 'host-interaction',
+    'impact', 'internal/limitation/file', 'lib', 'linking', 'load-code',
+    'malware-family/plugx', 'nursery', 'persistence', 'runtime/dotnet', 'targeting'
+]
+
 # 엔트로피 계산 함수
 def calculate_entropy_for_data(data):
     if not data:
@@ -115,8 +142,8 @@ def analyze_file(binary_path, rules_path, writer):
             api_calls = extract_api_calls(capa_result)
             row['api_call_count'] = len(api_calls)
         
-        # 악성 여부 (예시)
-        row['malicious'] = 1 if random.random() > 0.5 else 0
+        # 악성 여부 (우리가 지정)
+        row['malicious'] = malicious
 
         # CSV에 작성
         writer.writerow(row)
@@ -127,9 +154,13 @@ def analyze_file(binary_path, rules_path, writer):
 # 병렬 처리 실행 함수
 def analyze_files_concurrently(files, rules_path, output_csv):
     with open(output_csv, mode='w', newline='') as file:
-        csv_columns = ['file_name', 'file_size', 'size_kb', 'size_mb', 'size_large_threshold', 
-                       'entropy', 'packed', 'creation_time', 'modification_time', 
-                       'api_call_count', 'malicious']
+        csv_columns = ['file_name', 'entropy'] + \
+                      [f'ATT_Tactic_{tactic}' for tactic in att_tactics] + \
+                      [f'MBC_obj_{behavior}' for behavior in malware_behavior] + \
+                      [f'namespace_{ns}' for ns in namespaces] + \
+                      ['file_size', 'size_kb', 'size_mb', 'size_large_threshold', 'capabilityNum_matches'] + \
+                      ['packed', 'creation_time', 'modification_time', 'api_call_count'] + \
+                      ['malicious']
         
         writer = csv.DictWriter(file, fieldnames=csv_columns)
         writer.writeheader()
