@@ -139,26 +139,29 @@ def analyze_files_concurrently(files, rules_path, output_csv):
             for future in concurrent.futures.as_completed(futures):
                 future.result()
 
-# 랜덤으로 파일을 분석하여 병렬 처리
-def analyze_random_samples(repo_dir, rules_path, output_csv, num_samples=10):
+# 전체 파일을 분석하여 병렬 처리
+def analyze_all_samples(repo_dir, rules_path, output_csv):
     all_files = []
+    
+    # 디렉토리에서 모든 파일을 수집
     for root, dirs, files in os.walk(repo_dir):
         for file_name in files:
-            if file_name.endswith((".bin", ".exe", ".elf")):
+            if file_name.endswith((".bin", ".exe", ".elf")):  # 바이너리, 실행 파일만 선택
                 all_files.append(os.path.join(root, file_name))
     
-    if len(all_files) < num_samples:
-        print(f"Warning: Only {len(all_files)} files found, analyzing all of them.")
-        selected_files = all_files
-    else:
-        selected_files = random.sample(all_files, num_samples)
+    # 분석할 파일이 없는 경우 경고 메시지 출력
+    if not all_files:
+        print("No files found for analysis.")
+        return
 
-    analyze_files_concurrently(selected_files, rules_path, output_csv)
+    # 병렬로 파일 분석 실행
+    analyze_files_concurrently(all_files, rules_path, output_csv)
 
 # 실행 부분
 if __name__ == "__main__":
-    repo_dir = './DikeDataset/files/malware'
-    rules_path = '/home/onzl/capa/capa-rules'
-    output_csv = './onzl_final_dataset.csv'
+    repo_dir = './DikeDataset/files/malware'  # 파일이 저장된 디렉토리
+    rules_path = '/home/onzl/capa/capa-rules'  # capa 규칙 파일 경로
+    output_csv = './onzl_final_dataset.csv'  # 결과를 저장할 CSV 파일 경로
 
-    analyze_random_samples(repo_dir, rules_path, output_csv, num_samples=3)
+    # 전체 파일을 분석
+    analyze_all_samples(repo_dir, rules_path, output_csv)
