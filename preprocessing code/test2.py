@@ -13,7 +13,7 @@ malicious = 1
 
 # 설정된 파일 경로
 repo_dir = './DikeDataset/files/malware'
-rules_path = '/home/onzl/capa/capa-rules'
+rules_path = '/home/onzl/capa/capa-rules' 
 output_csv = './onzl_final_dataset.csv'
 
 # ATT&CK Tactic, MBC Behavior, Namespace 정의
@@ -51,24 +51,13 @@ def calculate_entropy_for_data(data):
 def get_file_size_features(file_path):
     try:
         file_size = os.path.getsize(file_path)
-        # 특정 임계값을 기준으로 파일 크기를 비율로 표현하거나 다른 형태로 변환
-        size_kb = file_size / 1024  # KB 단위로 변환
-        size_mb = file_size / (1024 * 1024)  # MB 단위로 변환
-        size_large_threshold = 1 if file_size > 10 * (1024 * 1024) else 0  # 10MB 이상의 파일 여부
-        return file_size, size_kb, size_mb, size_large_threshold
+        # 10MB 이상의 파일 여부
+        size_large_threshold = 1 if file_size > 10 * (1024 * 1024) else 0  # 기준은 학습시키면서 변경해보자 / size_large_threshold 자체를 빼버리는 경우의 수도 있음
+        return file_size, size_large_threshold
     except:
-        return 0, 0, 0, 0
+        return 0, 0
 
-# 패킹 여부 감지
-def check_packing(file_path):
-    try:
-        with open(file_path, 'rb') as f:
-            data = f.read()
-            if b'UPX' in data:
-                return 1  # UPX 패킹된 파일
-        return 0
-    except:
-        return 0
+# 패킹 여부 감지는 엔트로피로 통합
 
 # 파일 타임스탬프 관련 피처
 def get_file_timestamps(file_path):
@@ -119,14 +108,9 @@ def analyze_file(binary_path, rules_path, writer):
         row = {}
 
         # 파일 크기 관련 피처
-        file_size, size_kb, size_mb, size_large_threshold = get_file_size_features(binary_path)
+        file_size, size_large_threshold = get_file_size_features(binary_path)
         row['file_size'] = file_size
-        row['size_kb'] = size_kb
-        row['size_mb'] = size_mb
         row['size_large_threshold'] = size_large_threshold
-
-        # 패킹 여부
-        row['packed'] = check_packing(binary_path)
 
         # 파일 타임스탬프 피처
         creation_time, modification_time = get_file_timestamps(binary_path)
@@ -158,8 +142,8 @@ def analyze_files_concurrently(files, rules_path, output_csv):
                       [f'ATT_Tactic_{tactic}' for tactic in att_tactics] + \
                       [f'MBC_obj_{behavior}' for behavior in malware_behavior] + \
                       [f'namespace_{ns}' for ns in namespaces] + \
-                      ['file_size', 'size_kb', 'size_mb', 'size_large_threshold', 'capabilityNum_matches'] + \
-                      ['packed', 'creation_time', 'modification_time', 'api_call_count'] + \
+                      ['file_size', 'size_large_threshold', 'capabilityNum_matches'] + \
+                      ['creation_time', 'modification_time', 'api_call_count'] + \
                       ['malicious']
         
         writer = csv.DictWriter(file, fieldnames=csv_columns)
@@ -177,7 +161,7 @@ def analyze_all_samples(repo_dir, rules_path, output_csv):
     # 디렉토리에서 모든 파일을 수집
     for root, dirs, files in os.walk(repo_dir):
         for file_name in files:
-            if file_name.endswith((".bin", ".exe", ".elf")):  # 바이너리, 실행 파일만 선택
+            if file_name.endswith((".bin", ".exe", ".elf")):  # 확장자 늘려주세요 @유태윤
                 all_files.append(os.path.join(root, file_name))
     
     # 분석할 파일이 없는 경우 경고 메시지 출력
@@ -196,3 +180,50 @@ if __name__ == "__main__":
 
     # 전체 파일을 분석
     analyze_all_samples(repo_dir, rules_path, output_csv)
+
+
+"""
+# 랜덤으로 파일을 분석하여 병렬 처리
+def analyze_random_samples(repo_dir, rules_path, output_csv, num_samples=10):
+    all_files = []
+    # 디렉토리에서 파일 수집
+    for root, dirs, files in os.walk(repo_dir):
+        for file_name in files:
+            if file_name.endswith((".bin", ".exe", ".elf")):  # 확장자 늘려주세요 @유태윤
+                file_path = os.path.join(root, file_name)
+                all_files.append(file_path)
+    # 파일이 충분하지 않을 경우 경고
+            if file_name.endswith((".bin", ".exe", ".elf")):
+                all_files.append(os.path.join(root, file_name))
+    
+    if len(all_files) < num_samples:
+        print(f"Warning: Only {len(all_files)} files found, analyzing all of them.")
+        selected_files = all_files
+    else:
+        # 랜덤으로 num_samples 개의 파일 선택
+        selected_files = random.sample(all_files, num_samples)
+
+    # CSV 파일에 저장하기 위한 설정
+    with open(output_csv, mode='w', newline='') as file:
+        csv_columns = ['file_name', 'entropy'] + \
+                      [f'ATT_Tactic_{tactic}' for tactic in att_tactics] + \
+                      [f'MBC_obj_{behavior}' for behavior in malware_behavior] + \
+                      [f'namespace_{ns}' for ns in namespaces] + \
+                      ['file_size', 'size_large_threshold', 'capabilityNum_matches'] + \
+                      ['creation_time', 'modification_time', 'api_call_count'] + \
+                      ['malicious']
+        writer = csv.DictWriter(file, fieldnames=csv_columns)
+        writer.writeheader()
+        # 선택된 각 파일을 분석하고 CSV에 기록
+        for file_path in selected_files:
+            analyze_with_capa(file_path, rules_path, writer)
+    analyze_files_concurrently(selected_files, rules_path, output_csv)
+
+# 실행 부분
+if __name__ == "__main__":
+    # 랜덤으로 파일을 분석하고 결과를 CSV 파일로 저장
+    repo_dir = './DikeDataset/files/malware'
+    rules_path = '/home/onzl/capa/capa-rules'
+    output_csv = './onzl_final_dataset.csv'
+    analyze_random_samples(repo_dir, rules_path, output_csv, num_samples=3) #test file 개수 선택
+"""
