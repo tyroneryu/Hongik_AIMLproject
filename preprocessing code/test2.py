@@ -5,282 +5,160 @@ import subprocess
 import json
 from collections import Counter
 import math
-from sklearn.decomposition import PCA
-import numpy as np
-
-# 설정된 파일 경로
-repo_dir = './DikeDataset/files/malware'
-rules_path = '/home/onzl/capa/capa-rules'
-output_csv = './onzl_final_dataset.csv'
-
-# ATT&CK Tactic, MBC Behavior, Namespace 정의
-att_tactics = [
-    'Collection', 'Command and Control', 'Credential Access', 'Defense Evasion',
-    'Discovery', 'Execution', 'Exfiltration', 'Impact', 'Impair Process Control',
-    'Inhibit Response Function', 'Initial Access', 'Lateral Movement', 'Persistence', 
-    'Privilege Escalation'
-]
-malware_behavior = [
-    'Anti-Behavioral Analysis', 'Anti-Static Analysis', 'Collection', 'Command and Control', 
-    'Communication', 'Cryptography', 'Data', 'Defense Evasion', 'Discovery', 'Excution', 'File System', 
-    'Hardware', 'Impact', 'Memory', 'Operating System', 'Persistence', 'Process'
-]
-namespaces = [
-    'anti-analysis', 'collection', 'communication', 'compiler',
-    'data-manipulation', 'doc', 'executable', 'host-interaction',
-    'impact', 'internal/limitation/file', 'lib', 'linking', 'load-code',
-    'malware-family/plugx', 'nursery', 'persistence', 'runtime/dotnet', 'targeting'
-]
-
-# 피처 그룹화: ATT_Tech_pca, MBC_Behav_pca 관련 피처 정의
-ATT_Tech_groups = [
-    ['Initial Access', 'Lateral Movement', 'Credential Access', 'Command and Control'],  # 초기 접근 및 이동, 자격 증명 탈취 및 통제
-    ['Privilege Escalation', 'Persistence', 'Defense Evasion'],  # 권한 상승 및 지속성 유지, 탐지 회피
-    ['Collection', 'Exfiltration', 'Discovery', 'Execution'],  # 정보 수집 및 훼손, 탐색 및 명령 실행
-    ['Impact', 'Impair Process Control', 'Inhibit Response Function']  # 시스템 영향 및 중단
-]
-MBC_Behav_groups = [
-    ['Anti-Behavioral Analysis', 'Anti-Static Analysis', 'Defense Evasion'],  # 탐지 회피
-    ['Collection', 'Data', 'Discovery', 'Exfiltration', 'Impact'],  # 정보 수집 및 피해 유발
-    ['Command and Control', 'Communication', 'Execution'],  # 시스템 제어
-    ['Persistence', 'File System', 'Hardware', 'Memory', 'Operating System', 'Process', 'Cryptography']  # 지속성 및 자원 제어
-]
+import concurrent.futures
+from datetime import datetime
 
 # 엔트로피 계산 함수
-def calculate_entropy(file_path):
-    with open(file_path, 'rb') as f:
-        data = f.read()
-        if not data:
-            return 0
-        byte_counts = Counter(data)
-        data_len = len(data)
-        entropy = 0
-        for count in byte_counts.values():
-            p_x = count / data_len
-            entropy += -p_x * math.log2(p_x)
-        return entropy
+def calculate_entropy_for_data(data):
+    if not data:
+        return 0
+    byte_counts = Counter(data)
+    data_len = len(data)
+    entropy = 0
+    for count in byte_counts.values():
+        p_x = count / data_len
+        entropy += -p_x * math.log2(p_x)
+    return entropy
 
-# PCA를 위한 함수 정의
-def calculate_pca(features):
-    # 데이터가 2차원이 아닌 경우 변환
-    if len(features.shape) == 1:
-        features = features.reshape(1, -1)
+# 파일 크기 관련 피처를 추가하는 함수
+def get_file_size_features(file_path):
+    try:
+        file_size = os.path.getsize(file_path)
+        # 특정 임계값을 기준으로 파일 크기를 비율로 표현하거나 다른 형태로 변환
+        size_kb = file_size / 1024  # KB 단위로 변환
+        size_mb = file_size / (1024 * 1024)  # MB 단위로 변환
+        size_large_threshold = 1 if file_size > 10 * (1024 * 1024) else 0  # 10MB 이상의 파일 여부
+        return file_size, size_kb, size_mb, size_large_threshold
+    except:
+        return 0, 0, 0, 0
 
-    # 데이터가 모두 0이거나, 값이 동일한 경우 PCA 건너뛰기
-    if np.all(features == features[0]) or np.all(features == 0):
-        return 0  # PCA 계산이 불가능한 경우 0을 반환
-
-    # 데이터 크기가 너무 작은 경우 PCA 건너뛰기
-    if features.shape[1] < 2:  # 최소 2개의 데이터 포인트 필요
+# 패킹 여부 감지
+def check_packing(file_path):
+    try:
+        with open(file_path, 'rb') as f:
+            data = f.read()
+            if b'UPX' in data:
+                return 1  # UPX 패킹된 파일
+        return 0
+    except:
         return 0
 
-    # PCA 계산
-    pca = PCA(n_components=1)
-    transformed = pca.fit_transform(features)
-    return transformed[0][0]  # 첫 번째 주성분 반환
-
-# CSV에 PCA 결과를 추가하는 함수
-def add_pca_to_row(row, att_tactic_matches, mbc_behavior_matches):
-    # MBC_Behav_pca 계산
-    for i, group in enumerate(MBC_Behav_groups, start=1):
-        group_values = [mbc_behavior_matches.get(feature, 0) for feature in group]  # KeyError 방지
-        print(group_values)
-        pca_value = calculate_pca(np.array(group_values).reshape(1, -1))
-        row[f'MBC_Behav_pca{i}'] = pca_value  # MBC_Behav_pca1, 2, 3, 4에 추가
-    
-    # ATT_Tech_pca 계산
-    for i, group in enumerate(ATT_Tech_groups, start=1):
-        group_values = [att_tactic_matches.get(feature, 0) for feature in group]  # KeyError 방지
-        print(group_values)
-        pca_value = calculate_pca(np.array(group_values).reshape(1, -1))
-        row[f'ATT_Tech_pca{i}'] = pca_value  # ATT_Tech_pca1, 2, 3, 4에 추가
-
-# capa-rule 실행 및 결과 JSON 파일로 저장 함수 (터미널 출력 포함)
-def run_capa_and_save_log(binary_path, rules_path, output_log_file):
+# 파일 타임스탬프 관련 피처
+def get_file_timestamps(file_path):
     try:
-        # capa 명령어 준비 (JSON 형식으로 실행)
+        file_stats = os.stat(file_path)
+        creation_time = datetime.fromtimestamp(file_stats.st_ctime)
+        modification_time = datetime.fromtimestamp(file_stats.st_mtime)
+        return creation_time, modification_time
+    except:
+        return None, None
+
+# capa 명령어 실행 함수
+def run_capa(binary_path, rules_path):
+    try:
         capa_command = [
             "capa", binary_path, "-r", rules_path, "--signatures", rules_path, "-j"
         ]
-        # capa 명령어 실행 (JSON 형식으로 결과 캡처)
         result = subprocess.run(capa_command, capture_output=True, text=True)
-
-        # capa 실행 결과가 성공적이지 않으면 오류 처리
+        
         if result.returncode != 0:
             print(f"Error running capa for {binary_path}: {result.stderr}")
             return None
 
-        # capa 결과가 비어 있는지 확인 (비어 있을 경우 None 반환)
         if not result.stdout.strip():
             print(f"No output from capa for {binary_path}")
             return None
 
-        # capa 결과를 JSON 파일로 저장
-        with open(output_log_file, 'w') as log_file:
-            log_file.write(result.stdout)
-        
-        print(f"Saved capa result to {output_log_file}")  # 디버깅 정보 추가
-
-        return output_log_file
+        return json.loads(result.stdout)
     
     except Exception as e:
         print(f"Error: {e}")
         return None
 
-# 파일 분석 및 CSV 작성 함수
-def analyze_with_capa(binary_path, rules_path, csv_writer):
+# capa 결과에서 API 호출 정보를 추출
+def extract_api_calls(capa_result):
+    api_calls = []
+    if "rules" in capa_result:
+        for rule in capa_result["rules"].values():
+            if "features" in rule:
+                for feature in rule["features"]:
+                    if feature["type"] == "api":
+                        api_calls.append(feature["value"])
+    return api_calls
+
+# CSV에 파일 분석 결과 추가하는 함수
+def analyze_file(binary_path, rules_path, writer):
     try:
-        # 상위 디렉토리에 mal_csv 디렉토리 생성
-        parent_dir = os.path.dirname(os.path.dirname(binary_path))  # binary_path에서 디렉토리 경로만 추출
-        mal_csv_dir = os.path.join(parent_dir, "mal_csv")
-        os.makedirs(mal_csv_dir, exist_ok=True)  # mal_csv 디렉토리 생성 (존재하지 않을 경우)
+        row = {}
 
-        # mal_csv 디렉토리에 JSON 파일 저장 경로 생성
-        file_name = os.path.basename(binary_path)
-        output_log_file = os.path.join(mal_csv_dir, f"{file_name}.json")
+        # 파일 크기 관련 피처
+        file_size, size_kb, size_mb, size_large_threshold = get_file_size_features(binary_path)
+        row['file_size'] = file_size
+        row['size_kb'] = size_kb
+        row['size_mb'] = size_mb
+        row['size_large_threshold'] = size_large_threshold
 
-        # CAPA 결과를 JSON 로그 파일로 저장하고 터미널에 출력
-        log_file_path = run_capa_and_save_log(binary_path, rules_path, output_log_file)
+        # 패킹 여부
+        row['packed'] = check_packing(binary_path)
 
-        if log_file_path is None:
-            print(f"Failed to save or retrieve capa results for {binary_path}")
-            return  # 분석 실패 시 반환
+        # 파일 타임스탬프 피처
+        creation_time, modification_time = get_file_timestamps(binary_path)
+        row['creation_time'] = creation_time if creation_time else 'N/A'
+        row['modification_time'] = modification_time if modification_time else 'N/A'
 
-        # 로그 파일에서 capa 결과 읽기 (필요한 경우 추가 작업)
-        if not os.path.exists(log_file_path):  # 파일 존재 여부 확인
-            print(f"Log file {log_file_path} not found.")
-            return
+        # capa 명령 실행
+        capa_result = run_capa(binary_path, rules_path)
+        if capa_result:
+            row['entropy'] = calculate_entropy_for_data(open(binary_path, 'rb').read())
+            
+            # API 호출 정보
+            api_calls = extract_api_calls(capa_result)
+            row['api_call_count'] = len(api_calls)
+        
+        # 악성 여부 (예시)
+        row['malicious'] = 1 if random.random() > 0.5 else 0
 
-        with open(log_file_path, 'r') as log_file:
-            file_content = log_file.read().strip()
-            if not file_content:
-                print(f"Log file {log_file_path} is empty or invalid.")
-                return
-
-            try:
-                capa_result = json.loads(file_content)
-            except json.JSONDecodeError as e:
-                print(f"Error decoding JSON from {log_file_path}: {e}")
-                return
-
-        # 엔트로피 계산
-        entropy = calculate_entropy(binary_path)
-
-        # capa 결과 분석
-        att_tactic_matches = {tactic: 0 for tactic in att_tactics}
-        mbc_behavior_matches = {behavior: 0 for behavior in malware_behavior}
-        namespace_matches = {ns: 0 for ns in namespaces}
-
-        capability_num_matches = 0  # 기능 매칭 횟수
-
-        # capa 결과에서 ATT&CK Tactic, MBC Behavior, Namespace 매칭 카운트
-        for rule in capa_result.get('rules', {}).values():
-            # 'meta'가 rule 안에 있는지 확인
-            if 'meta' in rule:
-                meta = rule['meta']
-                
-                # ATT&CK Tactic 매칭
-                if 'attack' in meta:
-                    for attack in meta.get('attack', []):
-                        # tactic과 technique을 각각 매칭
-                        tactic_name = attack.get('tactic', 'N/A')
-                        technique_name = attack.get('technique', 'N/A')
-
-                        # tactic 매칭 체크
-                        if tactic_name in att_tactics:
-                            att_tactic_matches[tactic_name] = att_tactic_matches.get(tactic_name, 0) + 1
-                            # print(f"Matched ATT&CK Tactic: {tactic_name}")
-
-                # MBC Behavior 매칭
-                if 'mbc' in meta:
-                    for mbc in meta.get('mbc', []):
-                        # objective와 behavior 매칭
-                        objective_name = mbc.get('objective', 'N/A')
-                        behavior_name = mbc.get('behavior', 'N/A')
-                        # print(f"Matched MBC Objective: {objective_name}")
-
-                        if objective_name in malware_behavior:
-                            mbc_behavior_matches[objective_name] = mbc_behavior_matches.get(objective_name, 0) + 1
-                            # print(f"Matched and incremented MBC Objective: {objective_name}")
-
-                # Namespace 매칭 (슬래시(/) 앞의 string만 사용)
-                if 'namespace' in meta:
-                    namespace_full = meta.get('namespace', 'N/A')
-                    namespace_prefix = namespace_full.split('/')[0]  # / 앞의 string만 추출
-                    if namespace_prefix in namespaces:
-                        namespace_matches[namespace_prefix] = namespace_matches.get(namespace_prefix, 0) + 1
-                        # print(f"Matched Namespace: {namespace_prefix}")
-
-            else:
-                print(f"No 'meta' field found in rule: {rule}")
-
-            # 기능 매칭 카운트
-            matches = rule.get('matches', [])
-            capability_num_matches += len(matches)
-
-        # CSV 행 생성
-        row = {
-            'file_name': file_name,
-            'entropy': entropy,
-            'capabilityNum_matches': capability_num_matches
-        }
-
-        # 각 ATT&CK Tactic, MBC Behavior, Namespace에 대해 매칭 횟수를 기록
-        for tactic in att_tactics:
-            row[f'ATT_Tactic_{tactic}'] = att_tactic_matches[tactic]
-        for behavior in malware_behavior:
-            row[f'MBC_obj_{behavior}'] = mbc_behavior_matches[behavior]
-        for ns in namespaces:
-            row[f'namespace_{ns}'] = namespace_matches[ns]
-
-        # 악성 여부 판정
-        row['malicious'] = 1 if capability_num_matches > 0 else 0  # 1 : malware, 0 : benign
-
-        # PCA 계산 후 추가
-        add_pca_to_row(row, att_tactic_matches, mbc_behavior_matches)
-
-        # CSV에 행 추가
-        csv_writer.writerow(row)
+        # CSV에 작성
+        writer.writerow(row)
 
     except Exception as e:
         print(f"Error analyzing {binary_path}: {e}")
 
-# 랜덤으로 파일을 분석하여 CSV에 기록
+# 병렬 처리 실행 함수
+def analyze_files_concurrently(files, rules_path, output_csv):
+    with open(output_csv, mode='w', newline='') as file:
+        csv_columns = ['file_name', 'file_size', 'size_kb', 'size_mb', 'size_large_threshold', 
+                       'entropy', 'packed', 'creation_time', 'modification_time', 
+                       'api_call_count', 'malicious']
+        
+        writer = csv.DictWriter(file, fieldnames=csv_columns)
+        writer.writeheader()
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = [executor.submit(analyze_file, f, rules_path, writer) for f in files]
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
+
+# 랜덤으로 파일을 분석하여 병렬 처리
 def analyze_random_samples(repo_dir, rules_path, output_csv, num_samples=10):
     all_files = []
-
-    # 디렉토리에서 파일 수집
     for root, dirs, files in os.walk(repo_dir):
         for file_name in files:
-            if file_name.endswith((".bin", ".exe", ".elf")):  # 바이너리 파일만 선택
-                file_path = os.path.join(root, file_name)
-                all_files.append(file_path)
-
-    # 파일이 충분하지 않을 경우 경고
+            if file_name.endswith((".bin", ".exe", ".elf")):
+                all_files.append(os.path.join(root, file_name))
+    
     if len(all_files) < num_samples:
         print(f"Warning: Only {len(all_files)} files found, analyzing all of them.")
         selected_files = all_files
     else:
-        # 랜덤으로 num_samples 개의 파일 선택
         selected_files = random.sample(all_files, num_samples)
 
-    # CSV 파일에 저장하기 위한 설정
-    with open(output_csv, mode='w', newline='') as file:
-        csv_columns = ['file_name', 'entropy', 'capabilityNum_matches'] + \
-                      [f'ATT_Tactic_{tactic}' for tactic in att_tactics] + \
-                      [f'MBC_obj_{behavior}' for behavior in malware_behavior] + \
-                      [f'namespace_{ns}' for ns in namespaces] + ['malicious'] + \
-                      [f'MBC_Behav_pca{i}' for i in range(1, 5)] + \
-                      [f'ATT_Tech_pca{i}' for i in range(1, 5)] + ['malicious']
-
-        writer = csv.DictWriter(file, fieldnames=csv_columns)
-        writer.writeheader()
-
-        # 선택된 각 파일을 분석하고 CSV에 기록
-        for file_path in selected_files:
-            analyze_with_capa(file_path, rules_path, writer)
+    analyze_files_concurrently(selected_files, rules_path, output_csv)
 
 # 실행 부분
 if __name__ == "__main__":
-    # 랜덤으로 파일을 분석하고 결과를 CSV 파일로 저장
+    repo_dir = './DikeDataset/files/malware'
+    rules_path = '/home/onzl/capa/capa-rules'
+    output_csv = './onzl_final_dataset.csv'
+
     analyze_random_samples(repo_dir, rules_path, output_csv, num_samples=3)
