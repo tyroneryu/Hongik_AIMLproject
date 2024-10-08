@@ -161,7 +161,7 @@ def analyze_all_samples(repo_dir, rules_path, output_csv):
     # 디렉토리에서 모든 파일을 수집
     for root, dirs, files in os.walk(repo_dir):
         for file_name in files:
-            if file_name.endswith((".bin", ".exe", ".elf")):  # 확장자 늘려주세요 @유태윤
+            if file_name.endswith((".bin", ".exe", ".elf", "dat", ".one", ".ps1", ".bat", ".htm", "pcap", ".js", ".PML")):  # 확장자 늘려주세요 @유태윤
                 all_files.append(os.path.join(root, file_name))
     
     # 분석할 파일이 없는 경우 경고 메시지 출력
