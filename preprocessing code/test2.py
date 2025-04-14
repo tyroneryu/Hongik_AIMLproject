@@ -160,5 +160,6 @@ if __name__ == "__main__":
     repo_dir = './DikeDataset/files/malware'
     rules_path = '/home/onzl/capa/capa-rules'
     output_csv = './onzl_final_dataset.csv'
-
-    analyze_random_samples(repo_dir, rules_path, output_csv, num_samples=3)
+    
+    num = 2 # sample test 개수 지정
+    analyze_random_samples(repo_dir, rules_path, output_csv, num_samples=num)
