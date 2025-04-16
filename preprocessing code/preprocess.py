@@ -7,12 +7,15 @@ import time
 from collections import Counter
 import math
 
-# 설정된 파일 경로: ~/Documents/GitHub/Hongik_AIMLproject/
-repo_dir = '~/Documents/GitHub/Hongik_AIMLproject/DikeDataset/files/benign' 
+# 설정된 파일 경로: /Users/onzl/Documents/GitHub/Hongik_AIMLproject/
+repo_dir = '/Users/onzl/Documents/GitHub/Hongik_AIMLproject/DikeDataset/files/benign' 
 # https://github.com/iosifache/DikeDataset
-rules_path = '~/Documents/GitHub/Hongik_AIMLproject/capa'
-yara_rules_path = '~/Documents/GitHub/Hongik_AIMLproject/yara'  
-output_csv = '~/Documents/GitHub/Hongik_AIMLproject/data_result/test_data.csv'
+rules_path = '/Users/onzl/Documents/GitHub/Hongik_AIMLproject/capa'
+# ! pyenv install 3.10.13
+# ! pyenv global 3.10.13
+# ! pip install flare-capa
+yara_rules_path = '/Users/onzl/Documents/GitHub/Hongik_AIMLproject/yara'  
+output_csv = '/Users/onzl/Documents/GitHub/Hongik_AIMLproject/data_result/test_data.csv'
 
 # 정의된 카테고리
 att_tactics = [
@@ -90,11 +93,11 @@ def extract_api_features(rule):
 def analyze_with_capa(binary_path, rules_path, yara_rules_path, csv_writer):
     try:
         parent_dir = os.path.dirname(os.path.dirname(binary_path))
-        mal_csv_dir = os.path.join(parent_dir, "mal_csv")
-        os.makedirs(mal_csv_dir, exist_ok=True)
+        csv_dir = os.path.join(parent_dir, "csv")
+        os.makedirs(csv_dir, exist_ok=True)
 
         file_name = os.path.basename(binary_path)
-        output_log_file = os.path.join(mal_csv_dir, f"{file_name}.json")
+        output_log_file = os.path.join(csv_dir, f"{file_name}.json")
         log_file_path, elapsed = run_capa(binary_path, rules_path, output_log_file)
         if not log_file_path or not os.path.exists(log_file_path):
             return
@@ -188,5 +191,5 @@ def analyze_random_samples(repo_dir, rules_path, yara_rules_path, output_csv, nu
 
 # 실행
 if __name__ == "__main__":
-    num = 2 # number of test files
+    num = 20 # number of test files
     analyze_random_samples(repo_dir, rules_path, yara_rules_path, output_csv, num_samples=num)
