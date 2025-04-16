@@ -7,11 +7,12 @@ import time
 from collections import Counter
 import math
 
-# 설정된 파일 경로
-repo_dir = './DikeDataset/files/malware'
-rules_path = '/home/onzl/capa/capa-rules'
-yara_rules_path = '/home/onzl/yara-rules'  # YARA 룰 경로 추가
-output_csv = './onzl_final_dataset.csv'
+# 설정된 파일 경로: ~/Documents/GitHub/Hongik_AIMLproject/
+repo_dir = '~/Documents/GitHub/Hongik_AIMLproject/DikeDataset/files/benign' 
+# https://github.com/iosifache/DikeDataset
+rules_path = '~/Documents/GitHub/Hongik_AIMLproject/capa'
+yara_rules_path = '~/Documents/GitHub/Hongik_AIMLproject/yara'  
+output_csv = '~/Documents/GitHub/Hongik_AIMLproject/data_result/test_data.csv'
 
 # 정의된 카테고리
 att_tactics = [
