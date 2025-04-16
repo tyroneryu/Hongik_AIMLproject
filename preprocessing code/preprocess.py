@@ -78,6 +78,24 @@ def run_yara(binary_path, yara_rules_path):
         print(f"YARA error on {binary_path}: {e}")
         return []
 
+def update_yara_features(all_yara_matches, yara_matched):
+    """
+    all_yara_matches: set of all YARA rule names seen across all samples
+    yara_matched: list of YARA rule names matched in current sample
+    return: dictionary of format {'yara_<rule_name>': count_in_this_sample}
+    """
+    rule_counter = {f'yara_{rule}': 0 for rule in all_yara_matches}
+    for rule in yara_matched:
+        key = f'yara_{rule}'
+        if key in rule_counter:
+            rule_counter[key] += 1
+        else:
+            # 새로운 룰 발견 시, 동적으로 추가
+            rule_counter[key] = 1
+            all_yara_matches.add(rule)
+    return rule_counter, all_yara_matches
+
+
 def extract_api_features(rule):
     apis = []
     if 'features' in rule:
@@ -167,13 +185,17 @@ def analyze_with_capa(binary_path, rules_path, yara_rules_path, csv_writer):
     except Exception as e:
         print(f"Error analyzing {binary_path}: {e}")
 
-def analyze_random_samples(repo_dir, rules_path, yara_rules_path, output_csv, num_samples=10):
+def analyze_random_samples(repo_dir, rules_path, yara_rules_path, output_csv, num_samples=None):
     all_files = []
     for root, _, files in os.walk(repo_dir):
         for file in files:
             if file.endswith((".exe", ".bin", ".elf")):
                 all_files.append(os.path.join(root, file))
-    selected_files = all_files if len(all_files) <= num_samples else random.sample(all_files, num_samples)
+
+    if num_samples is None or len(all_files) <= num_samples:
+        selected_files = all_files
+    else:
+        selected_files = random.sample(all_files, num_samples)
 
     with open(output_csv, mode='w', newline='') as f:
         csv_columns = [
@@ -193,3 +215,5 @@ def analyze_random_samples(repo_dir, rules_path, yara_rules_path, output_csv, nu
 if __name__ == "__main__":
     num = 20 # number of test files
     analyze_random_samples(repo_dir, rules_path, yara_rules_path, output_csv, num_samples=num)
+    # analyze_random_samples(repo_dir, rules_path, yara_rules_path, output_csv)
+    # entire files in directory
