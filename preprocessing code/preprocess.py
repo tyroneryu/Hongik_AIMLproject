@@ -213,7 +213,7 @@ def analyze_random_samples(repo_dir, rules_path, yara_rules_path, output_csv, nu
 
 # 실행
 if __name__ == "__main__":
-    num = 20 # number of test files
-    analyze_random_samples(repo_dir, rules_path, yara_rules_path, output_csv, num_samples=num)
-    # analyze_random_samples(repo_dir, rules_path, yara_rules_path, output_csv)
+    # num = 20 # number of test files
+    # analyze_random_samples(repo_dir, rules_path, yara_rules_path, output_csv, num_samples=num)
+    analyze_random_samples(repo_dir, rules_path, yara_rules_path, output_csv)
     # entire files in directory
