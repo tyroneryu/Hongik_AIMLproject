@@ -7,12 +7,15 @@ import math
 from collections import Counter
 import pandas as pd
 
+# 경로 설정
 repo_dir = '/home/taeyun-ryu/Desktop/aimlp/dataset'
 rules_path = '/home/taeyun-ryu/Desktop/aimlp/capa/rules'
 yara_rules_path = '/home/taeyun-ryu/Desktop/aimlp/yara'
 output_csv = '/home/taeyun-ryu/Desktop/aimlp/output/dataset.csv'
 label_csv = '/home/taeyun-ryu/Desktop/aimlp/label.csv'
+capa_main_py = '/home/taeyun-ryu/Desktop/aimlp/capa/capa/main.py'
 
+# 카테고리 정의
 att_tactics = [
     'Collection', 'Command and Control', 'Credential Access', 'Defense Evasion',
     'Discovery', 'Execution', 'Exfiltration', 'Impact', 'Impair Process Control',
@@ -42,18 +45,16 @@ def calculate_entropy(file_path):
             return 0
         byte_counts = Counter(data)
         data_len = len(data)
-        entropy = -sum((count / data_len) * math.log2(count / data_len) for count in byte_counts.values())
-        return entropy
+        return -sum((count / data_len) * math.log2(count / data_len) for count in byte_counts.values())
 
 def run_capa(binary_path, rules_path, output_log_file):
     try:
-        capa_path = '/home/taeyun-ryu/Desktop/aimlp/capa/capa.py'
-        capa_command = ['python3', capa_path, binary_path, '-r', rules_path, '--signatures', rules_path, '-j']
+        capa_command = ['python3', capa_main_py, binary_path, '-r', rules_path, '--signatures', rules_path, '-j']
         start = time.time()
         result = subprocess.run(capa_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=60)
         elapsed = time.time() - start
         if result.returncode != 0 or not result.stdout.strip():
-            print(f"Error running capa: {binary_path}")
+            print(f"Error running capa: {result.stderr}")
             return None, 0
         with open(output_log_file, 'w') as f:
             f.write(result.stdout)
@@ -81,11 +82,8 @@ def analyze_with_capa(binary_path, rules_path):
         mbc_behavior_matches = {b: 0 for b in malware_behavior}
         namespace_matches = {ns: 0 for ns in namespaces}
         matched_rules = set()
-        string_count = 0
-        number_count = 0
-        mnemonic_count = 0
+        string_count = number_count = mnemonic_count = capability_num_matches = 0
         all_api_calls = []
-        capability_num_matches = 0
 
         for rule_name, rule in capa_result.get('rules', {}).items():
             matched_rules.add(rule_name)
@@ -137,7 +135,7 @@ def analyze_with_capa(binary_path, rules_path):
 def analyze_and_merge():
     df = pd.read_csv(label_csv)
     df.set_index('filename', inplace=True)
-
+    
     all_files = []
     for root, _, files in os.walk(repo_dir):
         for file in files:
