@@ -10,17 +10,15 @@ import pandas as pd
 # 경로 설정
 repo_dir = '/home/taeyun-ryu/Desktop/aimlp/dataset'
 rules_path = '/home/taeyun-ryu/Desktop/aimlp/capa/rules'
-yara_rules_path = '/home/taeyun-ryu/Desktop/aimlp/yara'
-output_csv = '/home/taeyun-ryu/Desktop/aimlp/output/dataset.csv'
+output_dir = '/home/taeyun-ryu/Desktop/aimlp/output'
 label_csv = '/home/taeyun-ryu/Desktop/aimlp/label.csv'
-capa_main_py = '/home/taeyun-ryu/Desktop/aimlp/capa/capa/main.py'
+output_csv = os.path.join(output_dir, 'dataset.csv')
+capa_main = '/home/taeyun-ryu/Desktop/aimlp/capa/capa/main.py'
 
-# 카테고리 정의
-att_tactics = [
-    'Collection', 'Command and Control', 'Credential Access', 'Defense Evasion',
+# 전처리용 feature 리스트
+att_tactics = [ 'Collection', 'Command and Control', 'Credential Access', 'Defense Evasion',
     'Discovery', 'Execution', 'Exfiltration', 'Impact', 'Impair Process Control',
-    'Inhibit Response Function', 'Initial Access', 'Lateral Movement', 'Persistence',
-    'Privilege Escalation'
+    'Inhibit Response Function', 'Initial Access', 'Lateral Movement', 'Persistence', 'Privilege Escalation'
 ]
 malware_behavior = [
     'Anti-Behavioral Analysis', 'Anti-Static Analysis', 'Collection', 'Command and Control',
@@ -38,122 +36,130 @@ top_apis = [
     'VirtualAlloc', 'CreateProcessW', 'RegOpenKeyExW', 'InternetOpenA', 'WinExec'
 ]
 
+# 엔트로피 계산
 def calculate_entropy(file_path):
     with open(file_path, 'rb') as f:
         data = f.read()
         if not data:
             return 0
         byte_counts = Counter(data)
-        data_len = len(data)
-        return -sum((count / data_len) * math.log2(count / data_len) for count in byte_counts.values())
+        entropy = -sum((count / len(data)) * math.log2(count / len(data)) for count in byte_counts.values())
+        return entropy
 
+# capa 실행 함수
 def run_capa(binary_path, rules_path, output_log_file):
     try:
-        capa_path = '/home/taeyun-ryu/Desktop/aimlp/capa/capa/main.py'
-        capa_command = ['python3', capa_path, binary_path, '-r', rules_path, '--signatures', rules_path, '-j']
-        print(f"📦 Running: {' '.join(capa_command)}")  # 로그 추가
+        capa_command = [
+            'python3', capa_main,
+            '-j',
+            '-r', rules_path,
+            binary_path
+        ]
+        print(f"▶ Running capa: {' '.join(capa_command)}")
         start = time.time()
         result = subprocess.run(capa_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=60)
         elapsed = time.time() - start
-        if result.returncode != 0 or not result.stdout.strip():
-            print(f"❌ capa failed for {binary_path}")
-            print(f"stderr: {result.stderr}")  # 🔥 여기 꼭!
+
+        if result.returncode != 0:
+            print(f"❌ capa error: {result.stderr}")
             return None, 0
+        if not result.stdout.strip():
+            print("❌ capa returned empty result.")
+            return None, 0
+
         with open(output_log_file, 'w') as f:
             f.write(result.stdout)
         return output_log_file, elapsed
+
     except Exception as e:
-        print(f"💥 Exception in run_capa: {e}")
+        print(f"🔥 Exception in run_capa(): {e}")
         return None, 0
 
-
+# capa 분석 및 feature 추출
 def analyze_with_capa(binary_path, rules_path):
     try:
         file_name = os.path.basename(binary_path)
-        csv_dir = os.path.join(repo_dir, "csv")
+        csv_dir = os.path.join(output_dir, "csv")
         os.makedirs(csv_dir, exist_ok=True)
         output_log_file = os.path.join(csv_dir, f"{file_name}.json")
 
-        log_file_path, elapsed = run_capa(binary_path, rules_path, output_log_file)
-        if not log_file_path or not os.path.exists(log_file_path):
+        log_path, elapsed = run_capa(binary_path, rules_path, output_log_file)
+        if not log_path or not os.path.exists(log_path):
             return None
 
-        with open(log_file_path, 'r') as log_file:
-            capa_result = json.load(log_file)
+        with open(log_path, 'r') as f:
+            capa_result = json.load(f)
 
         entropy = calculate_entropy(binary_path)
-        att_tactic_matches = {t: 0 for t in att_tactics}
-        mbc_behavior_matches = {b: 0 for b in malware_behavior}
-        namespace_matches = {ns: 0 for ns in namespaces}
-        matched_rules = set()
-        string_count = number_count = mnemonic_count = capability_num_matches = 0
+        att = {t: 0 for t in att_tactics}
+        mbc = {b: 0 for b in malware_behavior}
+        ns_match = {ns: 0 for ns in namespaces}
         all_api_calls = []
+        rule_count = 0
+        str_cnt = num_cnt = mnem_cnt = match_cnt = 0
 
-        for rule_name, rule in capa_result.get('rules', {}).items():
-            matched_rules.add(rule_name)
-            meta = rule.get('meta', {})
-            for attack in meta.get('attack', []):
-                if attack.get('tactic') in att_tactic_matches:
-                    att_tactic_matches[attack['tactic']] += 1
-            for mbc in meta.get('mbc', []):
-                if mbc.get('objective') in mbc_behavior_matches:
-                    mbc_behavior_matches[mbc['objective']] += 1
-            ns = meta.get('namespace', '').split('/')[0]
-            if ns in namespace_matches:
-                namespace_matches[ns] += 1
+        for rule_name, rule in capa_result.get("rules", {}).items():
+            rule_count += 1
+            meta = rule.get("meta", {})
+            for a in meta.get("attack", []):
+                if a.get("tactic") in att: att[a["tactic"]] += 1
+            for m in meta.get("mbc", []):
+                if m.get("objective") in mbc: mbc[m["objective"]] += 1
+            ns = meta.get("namespace", "").split('/')[0]
+            if ns in ns_match: ns_match[ns] += 1
 
-            features = rule.get('features', {})
-            all_api_calls.extend([item for item in features.get('api', []) if isinstance(item, str)])
-            string_count += len(features.get('string', []))
-            number_count += len(features.get('number', []))
-            mnemonic_count += len(features.get('mnemonic', []))
-            capability_num_matches += len(rule.get('matches', []))
+            features = rule.get("features", {})
+            all_api_calls.extend([a for a in features.get("api", []) if isinstance(a, str)])
+            str_cnt += len(features.get("string", []))
+            num_cnt += len(features.get("number", []))
+            mnem_cnt += len(features.get("mnemonic", []))
+            match_cnt += len(rule.get("matches", []))
 
         row = {
             'filename': file_name,
             'entropy': entropy,
             'analysis_time_sec': round(elapsed, 3),
-            'capabilityNum_matches': capability_num_matches,
-            'matched_rule_count': len(matched_rules),
-            'string_count': string_count,
-            'number_count': number_count,
-            'mnemonic_count': mnemonic_count,
+            'capabilityNum_matches': match_cnt,
+            'matched_rule_count': rule_count,
+            'string_count': str_cnt,
+            'number_count': num_cnt,
+            'mnemonic_count': mnem_cnt,
             'unique_api_calls': len(set(all_api_calls))
         }
-
         for api in top_apis:
             row[f'api_{api}'] = int(api in all_api_calls)
-        for t in att_tactics:
-            row[f'ATT_Tactic_{t}'] = att_tactic_matches[t]
-        for b in malware_behavior:
-            row[f'MBC_obj_{b}'] = mbc_behavior_matches[b]
-        for ns in namespaces:
-            row[f'namespace_{ns}'] = namespace_matches[ns]
+        for t in att_tactics: row[f'ATT_Tactic_{t}'] = att[t]
+        for b in malware_behavior: row[f'MBC_obj_{b}'] = mbc[b]
+        for ns in namespaces: row[f'namespace_{ns}'] = ns_match[ns]
 
         return row
 
     except Exception as e:
-        print(f"Error analyzing {binary_path}: {e}")
+        print(f"🔥 Error in analyze_with_capa(): {e}")
         return None
 
+# 분석 및 CSV merge
 def analyze_and_merge():
     df = pd.read_csv(label_csv)
     df.set_index('filename', inplace=True)
-    
-    all_files = []
+    file_list = []
+
     for root, _, files in os.walk(repo_dir):
         for file in files:
             if file.endswith(('.exe', '.bin', '.elf', '.vir')):
-                all_files.append(os.path.join(root, file))
+                file_list.append(os.path.join(root, file))
 
-    for file_path in all_files:
-        row = analyze_with_capa(file_path, rules_path)
+    for path in file_list:
+        print(f"🔍 Processing: {path}")
+        row = analyze_with_capa(path, rules_path)
         if row and row['filename'] in df.index:
-            for key, value in row.items():
-                if key != 'filename':
-                    df.at[row['filename'], key] = value
+            for k, v in row.items():
+                if k != 'filename':
+                    df.at[row['filename'], k] = v
 
     df.reset_index().to_csv(output_csv, index=False)
+    print(f"✅ Saved final dataset to: {output_csv}")
 
+# 실행
 if __name__ == "__main__":
     analyze_and_merge()
