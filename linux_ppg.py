@@ -165,7 +165,7 @@ def analyze_and_merge(repo_dir, rules_path, yara_rules_path, label_csv, output_c
     all_files = []
     for root, _, files in os.walk(repo_dir):
         for file in files:
-            if file.endswith(('.exe', '.bin', '.elf', '.vir')):
+            if file.endswith(('.exe', '.bin', '.elf', '.vir', '.vir_0', '.vir_1')):
                 all_files.append(os.path.join(root, file))
 
     for file_path in all_files:
