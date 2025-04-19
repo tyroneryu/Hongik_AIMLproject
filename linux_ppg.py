@@ -1,11 +1,10 @@
 import os
 import csv
-import random
 import subprocess
 import json
 import time
-from collections import Counter
 import math
+from collections import Counter
 import pandas as pd
 
 repo_dir = '/home/taeyun-ryu/Desktop/aimlp/dataset'
@@ -48,12 +47,12 @@ def calculate_entropy(file_path):
 
 def run_capa(binary_path, rules_path, output_log_file):
     try:
-        capa_path = "/home/taeyun-ryu/Desktop/aimlp/capa/capa.py"
-        capa_command = ["python3", capa_path, binary_path, "-r", rules_path, "--signatures", rules_path, "-j"]
+        capa_path = '/home/taeyun-ryu/Desktop/aimlp/capa/capa.py'
+        capa_command = ['python3', capa_path, binary_path, '-r', rules_path, '--signatures', rules_path, '-j']
         start = time.time()
-        result = subprocess.run(capa_command, cature_output=True, text=True, timeout=60)
+        result = subprocess.run(capa_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=60)
         elapsed = time.time() - start
-        if result.returncode !=0 or not result.stdout.strip():
+        if result.returncode != 0 or not result.stdout.strip():
             print(f"Error running capa: {binary_path}")
             return None, 0
         with open(output_log_file, 'w') as f:
@@ -63,34 +62,13 @@ def run_capa(binary_path, rules_path, output_log_file):
         print(f"E: Error running capa: {e}")
         return None, 0
 
-
-def run_yara(binary_path, yara_rules_path):
-    try:
-        yara_command = ["yara", "-r", yara_rules_path, binary_path]
-        result = subprocess.run(yara_command, capture_output=True, text=True, timeout=30)
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip().splitlines()
-        return []
-    except Exception as e:
-        print(f"YARA error on {binary_path}: {e}")
-        return []
-
-def extract_api_features(rule):
-    apis = []
-    if 'features' in rule:
-        for k, v in rule['features'].items():
-            if k == 'api' and isinstance(v, list):
-                apis.extend([item for item in v if isinstance(item, str)])
-            elif isinstance(v, list):
-                for sub in v:
-                    if isinstance(sub, dict) and 'api' in sub:
-                        apis.append(sub['api'])
-    return apis
-
-def analyze_with_capa(binary_path, rules_path, yara_rules_path):
+def analyze_with_capa(binary_path, rules_path):
     try:
         file_name = os.path.basename(binary_path)
-        output_log_file = os.path.join("/tmp", f"{file_name}.json")
+        csv_dir = os.path.join(repo_dir, "csv")
+        os.makedirs(csv_dir, exist_ok=True)
+        output_log_file = os.path.join(csv_dir, f"{file_name}.json")
+
         log_file_path, elapsed = run_capa(binary_path, rules_path, output_log_file)
         if not log_file_path or not os.path.exists(log_file_path):
             return None
@@ -103,34 +81,31 @@ def analyze_with_capa(binary_path, rules_path, yara_rules_path):
         mbc_behavior_matches = {b: 0 for b in malware_behavior}
         namespace_matches = {ns: 0 for ns in namespaces}
         matched_rules = set()
-        all_api_calls = []
         string_count = 0
         number_count = 0
         mnemonic_count = 0
+        all_api_calls = []
         capability_num_matches = 0
 
         for rule_name, rule in capa_result.get('rules', {}).items():
             matched_rules.add(rule_name)
-            if 'meta' in rule:
-                meta = rule['meta']
-                for attack in meta.get('attack', []):
-                    tactic = attack.get('tactic')
-                    if tactic in att_tactic_matches:
-                        att_tactic_matches[tactic] += 1
-                for mbc in meta.get('mbc', []):
-                    objective = mbc.get('objective')
-                    if objective in mbc_behavior_matches:
-                        mbc_behavior_matches[objective] += 1
-                ns = meta.get('namespace', '').split('/')[0]
-                if ns in namespace_matches:
-                    namespace_matches[ns] += 1
-            all_api_calls.extend(extract_api_features(rule))
-            string_count += len(rule.get('features', {}).get('string', []))
-            number_count += len(rule.get('features', {}).get('number', []))
-            mnemonic_count += len(rule.get('features', {}).get('mnemonic', []))
-            capability_num_matches += len(rule.get('matches', []))
+            meta = rule.get('meta', {})
+            for attack in meta.get('attack', []):
+                if attack.get('tactic') in att_tactic_matches:
+                    att_tactic_matches[attack['tactic']] += 1
+            for mbc in meta.get('mbc', []):
+                if mbc.get('objective') in mbc_behavior_matches:
+                    mbc_behavior_matches[mbc['objective']] += 1
+            ns = meta.get('namespace', '').split('/')[0]
+            if ns in namespace_matches:
+                namespace_matches[ns] += 1
 
-        yara_matched = run_yara(binary_path, yara_rules_path)
+            features = rule.get('features', {})
+            all_api_calls.extend([item for item in features.get('api', []) if isinstance(item, str)])
+            string_count += len(features.get('string', []))
+            number_count += len(features.get('number', []))
+            mnemonic_count += len(features.get('mnemonic', []))
+            capability_num_matches += len(rule.get('matches', []))
 
         row = {
             'filename': file_name,
@@ -141,8 +116,7 @@ def analyze_with_capa(binary_path, rules_path, yara_rules_path):
             'string_count': string_count,
             'number_count': number_count,
             'mnemonic_count': mnemonic_count,
-            'unique_api_calls': len(set(all_api_calls)),
-            'yara_match_count': len(yara_matched)
+            'unique_api_calls': len(set(all_api_calls))
         }
 
         for api in top_apis:
@@ -160,28 +134,24 @@ def analyze_with_capa(binary_path, rules_path, yara_rules_path):
         print(f"Error analyzing {binary_path}: {e}")
         return None
 
-def analyze_and_merge(repo_dir, rules_path, yara_rules_path, label_csv, output_csv):
+def analyze_and_merge():
     df = pd.read_csv(label_csv)
     df.set_index('filename', inplace=True)
 
     all_files = []
     for root, _, files in os.walk(repo_dir):
         for file in files:
-            if file.endswith(('.exe', '.bin', '.elf', '.vir', '.vir_0', '.vir_1')):
+            if file.endswith(('.exe', '.bin', '.elf', '.vir')):
                 all_files.append(os.path.join(root, file))
 
     for file_path in all_files:
-        row = analyze_with_capa(file_path, rules_path, yara_rules_path)
-        if row:
-            fname = row['filename']
-            if fname in df.index:
-                for key, value in row.items():
-                    if key != 'filename':
-                        df.at[fname, key] = value
-            else:
-                print(f"[WARN] {fname} is not in label.csv and will be skipped.")
+        row = analyze_with_capa(file_path, rules_path)
+        if row and row['filename'] in df.index:
+            for key, value in row.items():
+                if key != 'filename':
+                    df.at[row['filename'], key] = value
 
     df.reset_index().to_csv(output_csv, index=False)
 
 if __name__ == "__main__":
-    analyze_and_merge(repo_dir, rules_path, yara_rules_path, label_csv, output_csv)
+    analyze_and_merge()
