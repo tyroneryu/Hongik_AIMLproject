@@ -7,17 +7,11 @@ import time
 from collections import Counter
 import math
 
-# 설정된 파일 경로: /home/bigdata/Desktop/dataset
-repo_dir = '/home/bigdata/Desktop/dataset/4. 대용량_정상,악성파일Ⅱ-(3),(4)/대용량_정상,악성파일3/KISA-CISC2017-Malware-3rd (2)'
-# /home/bigdata/Desktop/dataset/4. 대용량_정상,악성파일Ⅱ-(3),(4)/대용량_정상,악성파일4/KISA-CISC2017-Malware-4th (2)
-# /home/bigdata/Desktop/dataset/5. 대용량_정상,악성파일Ⅲ/01. 2018_TrainSet
-# /home/bigdata/Desktop/dataset/5. 대용량_정상,악성파일Ⅲ/02. 2018_예선_1차
-# /home/bigdata/Desktop/dataset/5. 대용량_정상,악성파일Ⅲ/03. 2018_예선_2차
-# /home/bigdata/Desktop/dataset/5. 대용량_정상,악성파일Ⅲ/04. 2018_TestSet_본선_1차
-
-rules_path = '/home/bigdata/Desktop/dataset/capa-rules'
-yara_rules_path = '/home/bigdata/Desktop/dataset/yara'  
-output_csv = '/home/bigdata/Desktop/dataset/dataset_3_4(1).csv'
+# 설정된 파일 경로 (수정됨)
+repo_dir = '/home/taeyun-ryu/Desktop/aimlp/dataset'
+rules_path = '/home/taeyun-ryu/Desktop/aimlp/capa/rules'
+yara_rules_path = '/home/taeyun-ryu/Desktop/aimlp/yara'
+output_csv = '/home/taeyun-ryu/Desktop/aimlp/output/dataset.csv'
 
 # 정의된 카테고리
 att_tactics = [
@@ -81,22 +75,15 @@ def run_yara(binary_path, yara_rules_path):
         return []
 
 def update_yara_features(all_yara_matches, yara_matched):
-    """
-    all_yara_matches: set of all YARA rule names seen across all samples
-    yara_matched: list of YARA rule names matched in current sample
-    return: dictionary of format {'yara_<rule_name>': count_in_this_sample}
-    """
     rule_counter = {f'yara_{rule}': 0 for rule in all_yara_matches}
     for rule in yara_matched:
         key = f'yara_{rule}'
         if key in rule_counter:
             rule_counter[key] += 1
         else:
-            # 새로운 룰 발견 시, 동적으로 추가
             rule_counter[key] = 1
             all_yara_matches.add(rule)
     return rule_counter, all_yara_matches
-
 
 def extract_api_features(rule):
     apis = []
@@ -112,8 +99,6 @@ def extract_api_features(rule):
 
 def analyze_with_capa(binary_path, rules_path, yara_rules_path):
     try:
-        import os, json, time
-
         file_name = os.path.basename(binary_path)
         parent_dir = os.path.dirname(os.path.dirname(binary_path))
         csv_dir = os.path.join(parent_dir, "csv")
@@ -190,75 +175,27 @@ def analyze_with_capa(binary_path, rules_path, yara_rules_path):
         return None
 
 
-def analyze_random_samples(repo_dir, rules_path, yara_rules_path, output_csv, num_samples=None):
-    all_files = []
-    for root, _, files in os.walk(repo_dir):
-        for file in files:
-            if file.endswith((".exe", ".bin", ".elf", ".vir")):
-                all_files.append(os.path.join(root, file))
-    
-    selected_files = all_files if not num_samples or len(all_files) <= num_samples else random.sample(all_files, num_samples)
-    
-    results = []
-    for idx, file_path in enumerate(selected_files, 1):
-        res = analyze_single_file(file_path)
-        if res:
-            results.append(res)
-        if idx % 100 == 0:
-            print(f"[INFO] {idx} files processed...")
-    
-    yara_colums = set()
-    for row in results:
-        for key in row.keys():
-            if key.startswith('yara_'):
-                yara_colums.add(key)
-    
-    csv_columns = [
-            'filename', 'entropy', 'analysis_time_sec', 'capabilityNum_matches', 'matched_rule_count',
-            'string_count', 'number_count', 'mnemonic_count', 'unique_api_calls', 'yara_match_count'
-        ] + [f'api_{api}' for api in top_apis] + \
-            [f'ATT_Tactic_{t}' for t in att_tactics] + \
-            [f'MBC_obj_{b}' for b in malware_behavior] + \
-            [f'namespace_{ns}' for ns in namespaces] + sorted(yara_columns)
-            
-    os.makedirs(os.path.dirname(output_csv), exist_ok=True)
-    with open(output_csv, mode='w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=csv_columns)
-        writer.writeheader()
-        for row in results:
-            for col in csv_columns:
-                row.setdefault(col, 0)
-            writer.writerow(row)
-
-# 메인 분석 함수 수정: 기존 CSV 불러오고 결과 병합
 def analyze_and_merge(repo_dir, rules_path, yara_rules_path, label_csv, output_csv):
     import pandas as pd
 
-    # CSV 불러오기
     df = pd.read_csv(label_csv)
     df.set_index('filename', inplace=True)
 
     all_files = []
     for root, _, files in os.walk(repo_dir):
         for file in files:
-            if file.endswith((".exe", ".bin", ".elf", "vir")):
+            if file.endswith((".exe", ".bin", ".elf", ".vir")):
                 all_files.append(os.path.join(root, file))
 
-    # 각 파일에 대해 분석하고 결과 병합
     for file_path in all_files:
         row = analyze_with_capa(file_path, rules_path, yara_rules_path)
         if row and row['filename'] in df.index:
             for key, value in row.items():
                 if key != 'filename':
                     df.at[row['filename'], key] = value
-    # 결과 저장
     df.reset_index().to_csv(output_csv, index=False)
 
 if __name__ == "__main__":
-    label_csv = '/home/bigdata/Desktop/dataset/4. 대용량_정상,악성파일Ⅱ-(3),(4)/대용량_정상,악성파일3/3rd_malware_track.csv'
-    # /home/bigdata/Desktop/dataset/4. 대용량_정상,악성파일Ⅱ-(3),(4)/대용량_정상,악성파일4/4th_malware_track.csv
-    # /home/bigdata/Desktop/dataset/5. 대용량_정상,악성파일Ⅲ/대용량_정상,악성파일Ⅲ_정답지모음/01. 2018_TrainSet_정답.xlsx
-    
-    output_csv = '/home/bigdata/Desktop/dataset/dataset_3_4(1).csv'
+    label_csv = '/home/taeyun-ryu/Desktop/aimlp/label/3rd_malware_track.csv'
+    output_csv = '/home/taeyun-ryu/Desktop/aimlp/output/dataset.csv'
     analyze_and_merge(repo_dir, rules_path, yara_rules_path, label_csv, output_csv)
-
