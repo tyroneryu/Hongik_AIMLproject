@@ -6,13 +6,14 @@ import json
 import time
 from collections import Counter
 import math
+import pandas as pd
 
 repo_dir = '/home/taeyun-ryu/Desktop/aimlp/dataset'
 rules_path = '/home/taeyun-ryu/Desktop/aimlp/capa/rules'
 yara_rules_path = '/home/taeyun-ryu/Desktop/aimlp/yara'
 output_csv = '/home/taeyun-ryu/Desktop/aimlp/output/dataset.csv'
+label_csv = '/home/taeyun-ryu/Desktop/aimlp/label.csv'
 
-# 정의된 카테고리
 att_tactics = [
     'Collection', 'Command and Control', 'Credential Access', 'Defense Evasion',
     'Discovery', 'Execution', 'Exfiltration', 'Impact', 'Impair Process Control',
@@ -30,7 +31,6 @@ namespaces = [
     'impact', 'internal', 'lib', 'linking', 'load-code',
     'malware-family', 'nursery', 'persistence', 'runtime', 'targeting'
 ]
-
 top_apis = [
     'CreateFileW', 'ReadFile', 'WriteFile', 'GetProcAddress', 'LoadLibraryA',
     'VirtualAlloc', 'CreateProcessW', 'RegOpenKeyExW', 'InternetOpenA', 'WinExec'
@@ -73,17 +73,6 @@ def run_yara(binary_path, yara_rules_path):
         print(f"YARA error on {binary_path}: {e}")
         return []
 
-def update_yara_features(all_yara_matches, yara_matched):
-    rule_counter = {f'yara_{rule}': 0 for rule in all_yara_matches}
-    for rule in yara_matched:
-        key = f'yara_{rule}'
-        if key in rule_counter:
-            rule_counter[key] += 1
-        else:
-            rule_counter[key] = 1
-            all_yara_matches.add(rule)
-    return rule_counter, all_yara_matches
-
 def extract_api_features(rule):
     apis = []
     if 'features' in rule:
@@ -99,11 +88,7 @@ def extract_api_features(rule):
 def analyze_with_capa(binary_path, rules_path, yara_rules_path):
     try:
         file_name = os.path.basename(binary_path)
-        parent_dir = os.path.dirname(os.path.dirname(binary_path))
-        csv_dir = os.path.join(parent_dir, "csv")
-        os.makedirs(csv_dir, exist_ok=True)
-
-        output_log_file = os.path.join(csv_dir, f"{file_name}.json")
+        output_log_file = os.path.join("/tmp", f"{file_name}.json")
         log_file_path, elapsed = run_capa(binary_path, rules_path, output_log_file)
         if not log_file_path or not os.path.exists(log_file_path):
             return None
@@ -173,28 +158,28 @@ def analyze_with_capa(binary_path, rules_path, yara_rules_path):
         print(f"Error analyzing {binary_path}: {e}")
         return None
 
-
 def analyze_and_merge(repo_dir, rules_path, yara_rules_path, label_csv, output_csv):
-    import pandas as pd
-
     df = pd.read_csv(label_csv)
     df.set_index('filename', inplace=True)
 
     all_files = []
     for root, _, files in os.walk(repo_dir):
         for file in files:
-            if file.endswith((".exe", ".bin", ".elf", ".vir")):
+            if file.endswith(('.exe', '.bin', '.elf', '.vir')):
                 all_files.append(os.path.join(root, file))
 
     for file_path in all_files:
         row = analyze_with_capa(file_path, rules_path, yara_rules_path)
-        if row and row['filename'] in df.index:
-            for key, value in row.items():
-                if key != 'filename':
-                    df.at[row['filename'], key] = value
+        if row:
+            fname = row['filename']
+            if fname in df.index:
+                for key, value in row.items():
+                    if key != 'filename':
+                        df.at[fname, key] = value
+            else:
+                print(f"[WARN] {fname} is not in label.csv and will be skipped.")
+
     df.reset_index().to_csv(output_csv, index=False)
 
 if __name__ == "__main__":
-    label_csv = '/home/taeyun-ryu/Desktop/aimlp/label.csv'
-    output_csv = '/home/taeyun-ryu/Desktop/aimlp/output/dataset.csv'
     analyze_and_merge(repo_dir, rules_path, yara_rules_path, label_csv, output_csv)
