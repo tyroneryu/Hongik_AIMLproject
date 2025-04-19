@@ -7,7 +7,6 @@ import time
 from collections import Counter
 import math
 
-# 설정된 파일 경로 (수정됨)
 repo_dir = '/home/taeyun-ryu/Desktop/aimlp/dataset'
 rules_path = '/home/taeyun-ryu/Desktop/aimlp/capa/rules'
 yara_rules_path = '/home/taeyun-ryu/Desktop/aimlp/yara'
@@ -196,6 +195,6 @@ def analyze_and_merge(repo_dir, rules_path, yara_rules_path, label_csv, output_c
     df.reset_index().to_csv(output_csv, index=False)
 
 if __name__ == "__main__":
-    label_csv = '/home/taeyun-ryu/Desktop/aimlp/label/3rd_malware_track.csv'
+    label_csv = '/home/taeyun-ryu/Desktop/aimlp/label.csv'
     output_csv = '/home/taeyun-ryu/Desktop/aimlp/output/dataset.csv'
     analyze_and_merge(repo_dir, rules_path, yara_rules_path, label_csv, output_csv)
