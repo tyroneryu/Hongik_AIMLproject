@@ -49,12 +49,8 @@ def calculate_entropy(file_path):
 # capa 실행 함수
 def run_capa(binary_path, rules_path, output_log_file):
     try:
-        capa_command = [
-            'python3', capa_main,
-            '-j',
-            '-r', rules_path,
-            binary_path
-        ]
+        capa_command = ['python3', capa_path, binary_path, '-r', rules_path, '--signatures', rules_path, '--json', '-o', output_log_file]
+
         print(f"▶ Running capa: {' '.join(capa_command)}")
         start = time.time()
         result = subprocess.run(capa_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=60)
