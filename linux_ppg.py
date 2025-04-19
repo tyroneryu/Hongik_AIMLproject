@@ -83,13 +83,26 @@ def analyze_with_capa(binary_path, rules_path):
         os.makedirs(csv_dir, exist_ok=True)
         output_log_file = os.path.join(csv_dir, f"{file_name}.json")
 
+        print(f"📂 capa json will be saved to: {output_log_file}")
+
         log_path, elapsed = run_capa(binary_path, rules_path, output_log_file)
-        if not log_path or not os.path.exists(log_path):
+        if not log_path:
+            print(f"🚫 capa log path is None for {binary_path}")
+            return None
+        if not os.path.exists(log_path):
+            print(f"🚫 json not written: {log_path}")
             return None
 
         with open(log_path, 'r') as f:
             capa_result = json.load(f)
 
+        if 'rules' not in capa_result or not capa_result['rules']:
+            print(f"🚫 capa returned no rules for: {file_name}")
+            return None
+
+        print(f"✅ capa returned {len(capa_result['rules'])} rules for {file_name}")
+
+        # 이하 동일
         entropy = calculate_entropy(binary_path)
         att = {t: 0 for t in att_tactics}
         mbc = {b: 0 for b in malware_behavior}
@@ -137,6 +150,7 @@ def analyze_with_capa(binary_path, rules_path):
     except Exception as e:
         print(f"🔥 Error in analyze_with_capa(): {e}")
         return None
+
 
 # 분석 및 CSV merge
 def analyze_and_merge():
