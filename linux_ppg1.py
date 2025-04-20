@@ -47,7 +47,9 @@ def run_capa(binary_path, rules_path, output_log_file):
     try:
         capa_command = [
             'python3', capa_script_path, binary_path,
-            '-r', rules_path, '--signatures', rules_path, '--json'
+            '-r', rules_path,
+            '--signatures', 
+            rules_path, '-f', 'pe', '--json'
         ]
         start = time.time()
         result = subprocess.run(capa_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=60)
