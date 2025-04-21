@@ -45,33 +45,27 @@ def calculate_entropy(file_path):
 # ===== capa 실행 =====
 def run_capa(binary_path, rules_path, output_log_file):
     try:
-        capa_command = [
-            'python3', capa_script_path, binary_path,
-            '-r', rules_path,
-            '--signatures', 
-            rules_path, '-f', 'pe', '--json'
-        ]
-        start = time.time()
-        result = subprocess.run(capa_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=60)
-        elapsed = time.time() - start
+        log_path = output_log_file.replace(".json", ".log")
+        with open(log_path, 'w') as log_file:
+            capa_command = [
+                'python3', capa_script_path, binary_path,
+                '-r', rules_path,
+                '--signatures', rules_path,
+                '-f', 'pe', '--json'
+            ]
+            start = time.time()
+            result = subprocess.run(capa_command, stdout=log_file, stderr=log_file, text=True, timeout=60)
+            elapsed = time.time() - start
 
-        if result.stderr:
-            print(f"[stderr] {result.stderr}")
         if result.returncode != 0:
-            print(f"[capa error] return code {result.returncode}")
-            return None, 0
+            print(f"[!] CAPA returned non-zero exit code for {binary_path}, check log: {log_path}")
+            return None, elapsed
 
-        if not result.stdout.strip():
-            print(f"[warning] capa returned empty output for {binary_path}")
-            return None, 0
-
-        with open(output_log_file, 'w') as f:
-            f.write(result.stdout)
         return output_log_file, elapsed
-
     except Exception as e:
-        print(f"E: Error running capa: {e}")
+        print(f"[!] Error running capa: {e}")
         return None, 0
+
 
 # ===== capa 결과 분석 =====
 def analyze_with_capa(binary_path, rules_path):
