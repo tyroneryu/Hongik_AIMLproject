@@ -10,8 +10,10 @@ phases:
       - pip install -r requirements.txt
   build:
     commands:
-      - echo "Starting build..."
-      - python training_test.py
+      - echo "Starting build process..."
+      - python training_test.py  
 artifacts:
   files:
-    - '**/*'
+    - '**/*'         
+  discard-paths: yes
+  base-directory: . 
