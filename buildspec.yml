@@ -2,18 +2,18 @@ version: 0.2
 
 phases:
   install:
-    runtime-versions:
-      python: 3.8
     commands:
-      - echo "Installing dependencies..."
+      - echo Installing dependencies...
       - pip install --upgrade pip
       - pip install -r requirements.txt
   build:
     commands:
-      - echo "Starting build process..."
-      - python training_test.py  
+      - echo Running training script...
+      - python training_test.py
+      - echo Uploading outputs to S3...
+      - aws s3 cp output/ s3://aiml-project-artifact-taeyunryu/outputs/ --recursive
 artifacts:
   files:
-    - '**/*'         
+    - '**/*'      
   discard-paths: yes
   base-directory: . 
